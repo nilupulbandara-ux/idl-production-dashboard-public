@@ -1,0 +1,39 @@
+name: mirror
+on:
+  schedule:
+    - cron: '5 0-16 * * *'   # UTC; = 05:35-22:35 Colombo
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Fetch and validate only, do not POST'
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Mirror
+        env:
+          FLOW_URL: ${{ secrets.FLOW_URL }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: python mirror.py
+      - name: Commit last.hash
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add last.hash
+          if git diff --cached --quiet; then echo "hash unchanged"; else
+            git commit -m "update last.hash"
+            git push
+          fi
