@@ -44,6 +44,56 @@ def get_raw(rel, tries=3):
     raise RuntimeError(last)
 
 
+DOCS_FILE = os.path.join(HERE, "docs", "data.json")
+BULKY = ("history", "oeeHistory", "defectHistory", "rejectProductionHistory", "downtimeHistory",
+         "downtimeRatioHistory", "absenteeismHistory", "wastageHistory", "sources")
+
+
+def validate_feed(feed, label):
+    p = feed.get("production")
+    if not isinstance(p, dict) or not isinstance(p.get("lines"), dict) or not p["lines"]:
+        raise RuntimeError(f"{label}: production.lines missing")
+    for k in ("actual", "plan"):
+        if not isinstance(p.get(k), (int, float)):
+            raise RuntimeError(f"{label}: production.{k} not numeric")
+    if not feed.get("period"):
+        raise RuntimeError(f"{label}: period missing")
+
+
+def publish_site(items):
+    """Write docs/data.json (public). Daily plans / performance excluded. Only called after validation."""
+    default = json.loads(items["api/feed"])
+    validate_feed(default, "api/feed")
+    months = {}
+    for k, v in items.items():
+        if k.startswith("api/feed?month="):
+            f = json.loads(v)
+            validate_feed(f, k)
+            for b in BULKY:
+                f.pop(b, None)
+            months[k.split("=", 1)[1]] = f
+    payload = {"months": months, "default": default}
+    new_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    old_payload = None
+    if os.path.exists(DOCS_FILE):
+        try:
+            with open(DOCS_FILE, encoding="utf-8") as fh:
+                old = json.load(fh)
+            old.pop("fetchedAtUtc", None)
+            old_payload = json.dumps(old, separators=(",", ":"), sort_keys=True)
+        except Exception:
+            old_payload = None
+    if old_payload == new_json:
+        print("docs/data.json unchanged")
+        return
+    payload["fetchedAtUtc"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    os.makedirs(os.path.dirname(DOCS_FILE), exist_ok=True)
+    out = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    with open(DOCS_FILE, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(out)
+    print(f"docs/data.json written {len(out)/1024:.0f}KB")
+
+
 def main():
     items = {}
     items["api/feed"] = get_raw("api/feed")
@@ -77,6 +127,7 @@ def main():
     json.loads(bundle)  # final validation
     data = bundle.encode("utf-8")
     print(f"items={len(items)} size={len(data)/1024:.0f}KB sha={sha[:12]}")
+    publish_site(items)
 
     if os.environ.get("DRY_RUN") == "1":
         print("dry run: no POST")

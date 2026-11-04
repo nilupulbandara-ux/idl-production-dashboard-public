@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>IDL Production Performance Dashboard</title>
+<style>
+:root{--navy:#0b2545;--navy2:#13315c;--teal:#0fa3a3;--teal2:#8de0d8;--bg:#eef3f7;--card:#fff;--ink:#12243a;--mute:#5d7088;--good:#1a9e6a;--warn:#e0a100;--bad:#d14343;--track:#dfe7ee}
+*{box-sizing:border-box}
+body{margin:0;font-family:Segoe UI,system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:18px 16px 14px;border-bottom:4px solid var(--teal)}
+header .co{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal2)}
+header h1{margin:2px 0 10px;font-size:22px;font-weight:600}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+select{font:inherit;padding:6px 10px;border-radius:6px;border:0;background:#fff;color:var(--navy)}
+.asof{font-size:13px;color:#cfe3ee}
+main{max-width:1100px;margin:0 auto;padding:14px 16px 30px}
+.fresh{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--mute);background:#fff;border-left:4px solid var(--teal);padding:8px 12px;border-radius:6px;margin-bottom:14px}
+.fresh b{color:var(--ink)}
+h2{font-size:15px;margin:20px 0 8px;color:var(--navy);text-transform:uppercase;letter-spacing:.06em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.card{background:var(--card);border-radius:10px;padding:12px;box-shadow:0 1px 3px rgba(11,37,69,.12)}
+.card.total{border-top:4px solid var(--teal)}
+.card h3{margin:0 0 2px;font-size:14px;color:var(--navy)}
+.sub{font-size:12px;color:var(--mute)}
+svg.g{display:block;width:100%;max-width:190px;margin:4px auto 0}
+.kv{display:flex;justify-content:space-between;font-size:13px;margin-top:5px}
+.kv span:first-child{color:var(--mute)}
+.pb{height:8px;background:var(--track);border-radius:4px;overflow:hidden;margin-top:4px}
+.pb i{display:block;height:100%;background:var(--teal)}
+.big{font-size:26px;font-weight:600;color:var(--navy)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:5px 6px;text-align:right;border-bottom:1px solid var(--track)}
+td:first-child,th:first-child{text-align:left}
+th{color:var(--mute);font-weight:600}
+.hbar{display:flex;align-items:center;gap:8px;font-size:12px;margin:4px 0}
+.hbar .n{width:44%;min-width:120px}
+.hbar .t{flex:1;height:10px;background:var(--track);border-radius:5px;overflow:hidden}
+.hbar .t i{display:block;height:100%;background:var(--navy2)}
+.hbar .v{width:52px;text-align:right}
+.note{font-size:12px;color:var(--mute);margin-top:6px}
+#err{display:none;background:#fde8e8;color:#8a1f1f;padding:10px;border-radius:6px}
+footer{text-align:center;font-size:11px;color:var(--mute);padding:10px}
+@media(max-width:480px){header h1{font-size:19px}.big{font-size:22px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="co">International Distillers Ltd</div>
+  <h1>Production Performance Dashboard</h1>
+  <div class="bar"><label for="m" class="asof">Month</label><select id="m"></select><span class="asof" id="asof"></span></div>
+</header>
+<main>
+  <div id="err"></div>
+  <div class="fresh" id="fresh"></div>
+  <div id="app"></div>
+</main>
+<footer>Figures mirrored from the IDL production feed. Units: 9-litre cases unless stated.</footer>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var nf=new Intl.NumberFormat('en-US');
+function isN(x){return typeof x==='number'&&isFinite(x)}
+function num(x){return isN(x)?nf.format(Math.round(x)):'n/a'}
+function pct(x,d){return isN(x)?(x*100).toFixed(d==null?1:d)+'%':'n/a'}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function col(r){return r>=0.95?'var(--good)':r>=0.75?'var(--warn)':'var(--bad)'}
+function ts(s){if(!s)return 'n/a';var d=new Date(s);return isNaN(d)?esc(s):d.toLocaleString('en-GB',{timeZone:'Asia/Colombo',dateStyle:'medium',timeStyle:'short'})+' (Colombo)'}
+function gauge(r){
+  var R=70,cx=100,cy=95,L=Math.PI*R;
+  var c=isN(r)?Math.max(0,Math.min(r,1.0)):0;
+  var d='M '+(cx-R)+' '+cy+' A '+R+' '+R+' 0 0 1 '+(cx+R)+' '+cy;
+  return '<svg class="g" viewBox="0 0 200 115" role="img" aria-label="'+pct(r,0)+'">'+
+   '<path d="'+d+'" fill="none" stroke="var(--track)" stroke-width="16" stroke-linecap="round"/>'+
+   (isN(r)?'<path d="'+d+'" fill="none" stroke="'+col(r)+'" stroke-width="16" stroke-linecap="round" stroke-dasharray="'+(L*c).toFixed(1)+' '+L.toFixed(1)+'"/>':'')+
+   '<text x="100" y="86" text-anchor="middle" font-size="28" font-weight="600" fill="var(--navy)">'+(isN(r)?Math.round(r*100)+'%':'n/a')+'</text>'+
+   '<text x="100" y="108" text-anchor="middle" font-size="10" fill="var(--mute)">actual vs plan to date</text></svg>';
+}
+function card(title,sub,a,p,mp,extra,total){
+  var r=isN(a)&&isN(p)&&p>0?a/p:null;
+  var mr=isN(a)&&isN(mp)&&mp>0?a/mp:null;
+  return '<div class="card'+(total?' total':'')+'"><h3>'+esc(title)+'</h3><div class="sub">'+esc(sub||'')+'</div>'+gauge(r)+
+   '<div class="kv"><span>Actual</span><b>'+num(a)+'</b></div>'+
+   '<div class="kv"><span>Plan to date</span><b>'+num(p)+'</b></div>'+
+   (isN(mp)?'<div class="kv"><span>Month plan</span><b>'+num(mp)+'</b></div><div class="pb"><i style="width:'+(mr==null?0:Math.min(mr,1)*100)+'%"></i></div><div class="sub">'+pct(mr,1)+' of month plan</div>':'')+
+   (extra||'')+'</div>';
+}
+function render(f,all,fetched){
+  var h='',P=f.production||{},lines=P.lines||{};
+  $('asof').textContent=f.asOfDate?'Production as of '+f.asOfDate:'';
+  h+='<h2>Production: actual vs plan ('+esc(f.period||'')+')</h2><div class="grid">';
+  h+=card('Total','All lines',P.actual,P.plan,P.monthlyTarget,
+    (isN(P.bottles)?'<div class="kv"><span>Bottles</span><b>'+num(P.bottles)+'</b></div>':''),true);
+  Object.keys(lines).forEach(function(k){
+    var l=lines[k]||{};
+    var packs=(l.packs||[]).filter(function(p){return isN(p.actual)}).map(function(p){return p.ml+' ml'}).join(', ');
+    h+=card(k,packs?'Packs: '+packs:'',l.actual,l.plan,l.monthlyPlan);
+  });
+  h+='</div>';
+  // OEE & rejects
+  h+='<h2>OEE and reject %</h2><div class="card"><table><tr><th></th><th>OEE</th><th>Reject %</th></tr>';
+  var rb=f.rejects&&f.rejects.benchmark;
+  Object.keys(lines).forEach(function(k){var l=lines[k]||{};
+    h+='<tr><td>'+esc(k)+'</td><td>'+pct(l.oee)+'</td><td style="color:'+(isN(l.reject)&&isN(rb)&&l.reject>rb?'var(--bad)':'inherit')+'">'+pct(l.reject)+'</td></tr>'});
+  h+='<tr><td><b>Overall</b></td><td><b>'+pct(f.oee&&f.oee.overall)+'</b></td><td><b>'+pct(f.rejects&&f.rejects.overall)+'</b></td></tr></table>';
+  if(isN(rb))h+='<div class="note">Reject benchmark '+pct(rb)+'; values above it shown in red.</div>';
+  h+='</div>';
+  // Sales
+  var S=f.sales;
+  if(S&&isN(S.actual)&&isN(S.target)){
+    var r=S.target>0?S.actual/S.target:null;
+    h+='<h2>Sales: actual vs target</h2><div class="card"><div class="big">'+num(S.actual)+' <span class="sub">of '+num(S.target)+' '+esc(S.unit||'')+'</span></div>'+
+     '<div class="pb"><i style="width:'+(r==null?0:Math.min(r,1)*100)+'%"></i></div><div class="sub">'+pct(r)+' of month target'+(S.asOfDate?' (as of '+esc(S.asOfDate)+')':'')+'</div></div>';
+  }
+  // Downtime
+  var D=f.downtime;
+  if(D&&D.categories&&D.categories.length){
+    var cs=D.categories.filter(function(c){return isN(c.hours)&&c.hours>0}).sort(function(a,b){return b.hours-a.hours});
+    var mx=cs.length?cs[0].hours:1;
+    h+='<h2>Downtime and losses (hours)</h2><div class="card">';
+    cs.forEach(function(c){h+='<div class="hbar"><span class="n">'+esc(c.name)+'</span><span class="t"><i style="width:'+(c.hours/mx*100)+'%"></i></span><span class="v">'+c.hours.toFixed(1)+'</span></div>'});
+    h+='<div class="note">'+(isN(D.availableHours)?'Available hours '+D.availableHours.toFixed(0):'')+(isN(D.actualWorkingHours)?' &middot; Actual working hours '+D.actualWorkingHours.toFixed(1):'')+'</div></div>';
+  }
+  // Workforce / safety
+  var W=f.workforce,SF=f.safety&&f.safety.sinceJan2026;
+  if(W||SF){
+    h+='<h2>People and safety</h2><div class="grid">';
+    if(W)h+='<div class="card"><h3>Workforce</h3>'+['executive','clerical','manual','total'].filter(function(k){return isN(W[k])}).map(function(k){return '<div class="kv"><span>'+k+'</span><b>'+W[k]+'</b></div>'}).join('')+'</div>';
+    if(SF)h+='<div class="card"><h3>Safety since Jan 2026</h3>'+Object.keys(SF).map(function(k){return '<div class="kv"><span>'+esc(k)+'</span><b>'+SF[k]+'</b></div>'}).join('')+'</div>';
+    h+='</div>';
+  }
+  // Financial YTD
+  var FP=f.financialPerformance;
+  if(FP&&FP.production&&FP.sales){
+    h+='<h2>'+esc(FP.label||'Financial year')+' to date</h2><div class="grid">'+
+    [['Production',FP.production],['Sales',FP.sales]].map(function(x){var o=x[1],r=o.target>0?o.actual/o.target:null;
+      return '<div class="card"><h3>'+x[0]+'</h3><div class="big">'+num(o.actual)+'</div><div class="sub">of annual target '+num(o.target)+'</div><div class="pb"><i style="width:'+(r==null?0:Math.min(r,1)*100)+'%"></i></div><div class="sub">'+pct(r)+'</div></div>'}).join('')+'</div>';
+  }
+  $('app').innerHTML=h;
+  var rm=f.reportMetadata||{};
+  $('fresh').innerHTML='<span>Feed revision <b>'+esc(f.revision==null?'n/a':f.revision)+'</b></span>'+
+   '<span>Feed updated <b>'+ts(f.updatedAt)+'</b></span>'+
+   (rm.sourceFile?'<span>Source <b>'+esc(rm.sourceFile)+'</b></span>':'')+
+   '<span>Page data generated <b>'+ts(fetched)+'</b></span>';
+}
+function fail(e){var x=$('err');x.style.display='block';x.textContent='Could not load data: '+e}
+fetch('data.json?'+Date.now(),{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(function(d){
+  var ms=Object.keys(d.months||{}).sort();
+  if(!ms.length)throw new Error('no months');
+  var latest=(d.default&&d.default.latestPublishedMonth)||ms[ms.length-1];
+  if(ms.indexOf(latest)<0)latest=ms[ms.length-1];
+  var sel=$('m');
+  ms.slice().reverse().forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o)});
+  sel.value=latest;
+  function go(){var m=sel.value;var f=(d.default&&d.default.period===m)?d.default:d.months[m];
+    if(f&&d.default&&d.default.period===m){f=Object.assign({},d.months[m]||{},d.default)}
+    render(f,d,d.fetchedAtUtc)}
+  sel.onchange=go;go();
+}).catch(function(e){fail(e.message||e)});
+})();
+</script>
+</body>
+</html>

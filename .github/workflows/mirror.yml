@@ -27,13 +27,13 @@ jobs:
           FLOW_URL: ${{ secrets.FLOW_URL }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: python mirror.py
-      - name: Commit last.hash
+      - name: Commit last.hash and public data
         if: ${{ !inputs.dry_run }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add last.hash
-          if git diff --cached --quiet; then echo "hash unchanged"; else
-            git commit -m "update last.hash"
+          git add last.hash docs/data.json
+          if git diff --cached --quiet; then echo "nothing to commit"; else
+            git commit -m "update data"
             git push
           fi
